@@ -13,13 +13,13 @@
   are added with `add_subdirectory`
 
 ## Compilation instructions
-- Create build directory `mkdir -p build`
-- Run `cmake -G Ninja -S . -B build && cmake --build build`
+- Create build directory `mkdir -p build-agent`
+- Run `cmake -G Ninja -S . -B build-agent && cmake --build build-agent`
 
 ## Test instructions
 - Run `ctest --test-dir build -V`
 
-## Nix instructions
+## Nix instruction
 - Enter the development environment with `nix develop`
 - Legacy shell with `nix-shell`
 

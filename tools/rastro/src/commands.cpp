@@ -16,7 +16,7 @@ constexpr const char* general_usage = R"(rastro — I/O toolkit for radio astron
 
 Usage:
   rastro help [command]
-  rastro summary <file>
+  rastro summary [--verbose] <file>
 
 Commands:
   help      Print usage information
@@ -26,11 +26,14 @@ Commands:
 constexpr const char* summary_usage = R"(rastro summary — print metadata of a visibility file
 
 Usage:
-  rastro summary <file>
+  rastro summary [--verbose] <file>
 
 The file must be a MeasurementSet v2. Only the table metadata and the small
 subtables are read; the bulk visibility data is never loaded, so the command
 stays cheap even for very large files.
+
+Options:
+  --verbose   Print also per-antenna/per-field/per-feed details and the log (HISTORY table)
 )";
 
 void print_general_usage(std::ostream& out) { out << general_usage; }
@@ -50,8 +53,10 @@ int run_help(const std::vector<std::string>& args) {
 /// Handle `rastro summary <file>`.
 int run_summary(const std::vector<std::string>& args) {
   cxxopts::Options options("rastro summary", "Print metadata of a visibility file");
-  options.add_options()("h,help", "Print usage")("file", "Visibility file (MeasurementSet v2)",
-                                                 cxxopts::value<std::string>());
+  options.add_options()("h,help", "Print usage")("verbose",
+                                                   "Print also per-antenna/per-field/per-feed details and the log (HISTORY table)",
+                                                   cxxopts::value<bool>())("file", "Visibility file (MeasurementSet v2)",
+                                                                          cxxopts::value<std::string>());
   options.parse_positional({"file"});
 
   cxxopts::ParseResult result;
@@ -93,7 +98,7 @@ int run_summary(const std::vector<std::string>& args) {
   }
 
   if (is_measurement_set(path)) {
-    print_measurement_set_summary(path, std::cout);
+    print_measurement_set_summary(path, std::cout, result.count("verbose") > 0);
     return 0;
   }
 

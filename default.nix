@@ -40,7 +40,7 @@ let
   ];
 in
 {
-  package = pkgs.stdenv.mkDerivation {
+  rastro_io = pkgs.stdenv.mkDerivation {
     pname = "rastro-io";
     version = "0.1.0";
 

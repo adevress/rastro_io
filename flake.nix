@@ -27,7 +27,8 @@
     in
     {
       packages = nixpkgs.lib.genAttrs systems (system: {
-        default = (mkResult system).package;
+        default = (mkResult system).rastro_io;
+        rastro_io = (mkResult system).rastro_io;
       });
 
       devShells = nixpkgs.lib.genAttrs systems (system: {

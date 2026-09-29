@@ -82,11 +82,11 @@ void print_observation(const casacore::MeasurementSet& ms, std::ostream& out) {
   }
 }
 
-void print_antennas(const casacore::MeasurementSet& ms, std::ostream& out) {
+void print_antennas(const casacore::MeasurementSet& ms, bool verbose, std::ostream& out) {
   const casacore::MSAntenna& antenna = ms.antenna();
 
   out << "Antennas: " << antenna.nrow() << "\n";
-  if (antenna.nrow() == 0) {
+  if (antenna.nrow() == 0 || !verbose) {
     return;
   }
 
@@ -102,11 +102,11 @@ void print_antennas(const casacore::MeasurementSet& ms, std::ostream& out) {
   }
 }
 
-void print_fields(const casacore::MeasurementSet& ms, std::ostream& out) {
+void print_fields(const casacore::MeasurementSet& ms, bool verbose, std::ostream& out) {
   const casacore::MSField& field = ms.field();
 
   out << "Fields: " << field.nrow() << "\n";
-  if (field.nrow() == 0) {
+  if (field.nrow() == 0 || !verbose) {
     return;
   }
 
@@ -188,11 +188,11 @@ void print_data_descriptions(const casacore::MeasurementSet& ms, std::ostream& o
   }
 }
 
-void print_feeds(const casacore::MeasurementSet& ms, std::ostream& out) {
+void print_feeds(const casacore::MeasurementSet& ms, bool verbose, std::ostream& out) {
   const casacore::MSFeed& feed = ms.feed();
 
   out << "Feeds: " << feed.nrow() << "\n";
-  if (feed.nrow() == 0) {
+  if (feed.nrow() == 0 || !verbose) {
     return;
   }
 
@@ -266,11 +266,12 @@ bool is_measurement_set(const std::string& path) {
   }
 }
 
-void print_measurement_set_summary(const std::string& path, std::ostream& out) {
+void print_measurement_set_summary(const std::string& path, std::ostream& out, bool verbose) {
   const casacore::MeasurementSet ms(path);
 
   out << std::setprecision(10);
-  out << "MeasurementSet: " << path << "\n";
+  out << "Summary:\n";
+  out << "  filename          : " << path << "\n";
   out << "  number of rows    : " << ms.nrow() << "\n";
   out << "  number of columns : " << ms.tableDesc().ncolumn() << "\n";
   if (ms.keywordSet().isDefined("MS_VERSION")) {
@@ -280,9 +281,9 @@ void print_measurement_set_summary(const std::string& path, std::ostream& out) {
 
   print_observation(ms, out);
   out << "\n";
-  print_antennas(ms, out);
+  print_antennas(ms, verbose, out);
   out << "\n";
-  print_fields(ms, out);
+  print_fields(ms, verbose, out);
   out << "\n";
   print_spectral_windows(ms, out);
   out << "\n";
@@ -290,11 +291,13 @@ void print_measurement_set_summary(const std::string& path, std::ostream& out) {
   out << "\n";
   print_data_descriptions(ms, out);
   out << "\n";
-  print_feeds(ms, out);
+  print_feeds(ms, verbose, out);
   out << "\n";
   print_sources(ms, out);
   out << "\n";
-  print_history(ms, out);
+  if (verbose) {
+    print_history(ms, out);
+  }
 }
 
 } // namespace rastro

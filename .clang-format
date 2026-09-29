@@ -1,0 +1,14 @@
+Language: Cpp
+BasedOnStyle: LLVM
+IndentWidth: 2
+UseTab: Never
+ColumnLimit: 120
+DerivePointerAlignment: false
+PointerAlignment: Left
+IncludeCategories:
+  - Regex: '^#include <(llvm|clang|gtest|gmock)/'
+    Priority: 2
+  - Regex: '^#include "[^/]*"'
+    Priority: 1
+  - Regex: '^#include <[^/]*>'
+    Priority: 3

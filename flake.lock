@@ -1,0 +1,43 @@
+{
+  "nodes": {
+    "astro-nix": {
+      "locked": {
+        "lastModified": 1790257225,
+        "narHash": "sha256-TkR0qkcUnCOF3R3414Y7td2RYKO9B4yqHTbOfH6XODQ=",
+        "owner": "adevress",
+        "repo": "astro-nix",
+        "rev": "bd2e7d9ad3246832782d8d2b35641b337ae3b227",
+        "type": "github"
+      },
+      "original": {
+        "owner": "adevress",
+        "repo": "astro-nix",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1764521362,
+        "narHash": "sha256-M101xMtWdF1eSD0xhiR8nG8CXRlHmv6V+VoY65Smwf4=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "871b9fd269ff6246794583ce4ee1031e1da71895",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "25.11",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "astro-nix": "astro-nix",
+        "nixpkgs": "nixpkgs"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

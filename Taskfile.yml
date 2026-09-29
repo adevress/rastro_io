@@ -1,0 +1,10 @@
+version: '3'
+
+tasks:
+  format:
+    cmds:
+      - find tools/ -name '*.[ch]pp' -exec clang-format -i {} \;
+    silent: true
+  check-format:
+    cmds:
+      - find tools/ -name '*.[ch]pp' -exec clang-format -fallback-style=none --Werror {} \;

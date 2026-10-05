@@ -8,9 +8,9 @@
 - For the rest, in C++ use a style similar to the C++ Core Guidelines
 
 ## Project layout
-- `tools/rastro/` — source of the `rastro` command-line binary
-- Reusable libraries (e.g. the UVH5 I/O layer) live at the repository root and
-  are added with `add_subdirectory`
+- `src/cli/` — source of the `rastro` command-line binary
+- `src/msv2/` — reusable library with the MeasurementSet v2 reading logic
+- Reusable libraries live under `src/` and are added with `add_subdirectory`
 
 ## Compilation instructions
 - Create build directory `mkdir -p build-agent`

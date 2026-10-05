@@ -42,7 +42,7 @@ All of them are provided by the Nix environment (see below).
 nix develop          # enter a shell with every dependency available
 cmake -G Ninja -S . -B build
 cmake --build build
-./build/tools/rastro/rastro help
+./build/src/cli/rastro help
 ```
 
 A legacy `nix-shell` environment is also available:

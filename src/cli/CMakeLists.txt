@@ -1,19 +1,19 @@
+## Command-line front-end of rastro.
 add_executable(rastro
-  src/main.cpp
-  src/commands.cpp
-  src/measurement_set_summary.cpp
+  main.cpp
+  commands.cpp
 )
 
 target_include_directories(rastro
   PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_compile_options(rastro PRIVATE ${RASTRO_COMMON_FLAGS})
 
 target_link_libraries(rastro
   PRIVATE
-    PkgConfig::CASACORE
+    rastro_msv2
     cxxopts::cxxopts
 )
 

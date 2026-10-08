@@ -41,9 +41,11 @@ endif()
 ## HighFive and HDF5 will be used by the UVH5 I/O layer.
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(CASACORE REQUIRED IMPORTED_TARGET casacore)
+pkg_check_modules(XTENSOR REQUIRED IMPORTED_TARGET xtensor)
 find_package(HDF5 REQUIRED COMPONENTS C CXX)
 find_package(HighFive REQUIRED)
 find_package(cxxopts REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_package(xtl REQUIRED)
 
 add_subdirectory(src)

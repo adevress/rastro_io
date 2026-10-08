@@ -2,6 +2,7 @@ build/*
 build-*/*
 .cache/*
 .vscode/*
+instructions/*
 compile_commands.json
 result
 result-*

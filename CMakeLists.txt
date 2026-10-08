@@ -44,5 +44,6 @@ pkg_check_modules(CASACORE REQUIRED IMPORTED_TARGET casacore)
 find_package(HDF5 REQUIRED COMPONENTS C CXX)
 find_package(HighFive REQUIRED)
 find_package(cxxopts REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 add_subdirectory(src)

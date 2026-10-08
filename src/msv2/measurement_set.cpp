@@ -1,4 +1,4 @@
-#include "measurement_set_summary.hpp"
+#include "measurement_set.hpp"
 
 #include <casacore/casa/Arrays/Array.h>
 #include <casacore/casa/Arrays/IPosition.h>
@@ -252,7 +252,7 @@ void print_history(const casacore::MeasurementSet& ms, std::ostream& out) {
 
 } // namespace
 
-bool is_measurement_set(const std::string& path) {
+bool is_msv2_measurement_set(const std::string& path) {
   if (!casacore::Table::isReadable(path)) {
     return false;
   }
@@ -266,7 +266,7 @@ bool is_measurement_set(const std::string& path) {
   }
 }
 
-void print_measurement_set_summary(const std::string& path, std::ostream& out, bool verbose) {
+void print_msv2_summary(const std::string& path, std::ostream& out, bool verbose) {
   const casacore::MeasurementSet ms(path);
 
   out << std::setprecision(10);

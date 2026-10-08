@@ -1,6 +1,8 @@
 #include "commands.hpp"
 
-#include "measurement_set_summary.hpp"
+#include "measurement_set_format.hpp"
+#include "msv2/measurement_set.hpp"
+#include "msv4/measurement_set.hpp"
 
 #include <cxxopts.hpp>
 
@@ -12,6 +14,19 @@
 namespace rastro {
 namespace {
 
+/// Dispatch a summary request to a measurement-set format.
+///
+/// The format only has to satisfy `MeasurementSetFormat`; the front-end never
+/// touches a format-specific header beyond the adapter type.
+template <MeasurementSetFormat Format>
+bool print_summary_if_format(const std::string& path, std::ostream& out, bool verbose) {
+  if (!Format::detect(path)) {
+    return false;
+  }
+  Format::summary(path, out, verbose);
+  return true;
+}
+
 constexpr const char* general_usage = R"(rastro — I/O toolkit for radio astronomy
 
 Usage:
@@ -20,7 +35,7 @@ Usage:
 
 Commands:
   help      Print usage information
-  summary   Print metadata of a visibility file (MeasurementSet v2)
+  summary   Print metadata of a visibility file (MeasurementSet v2 or MSv4)
 )";
 
 constexpr const char* summary_usage = R"(rastro summary — print metadata of a visibility file
@@ -28,12 +43,13 @@ constexpr const char* summary_usage = R"(rastro summary — print metadata of a 
 Usage:
   rastro summary [--verbose] <file>
 
-The file must be a MeasurementSet v2. Only the table metadata and the small
-subtables are read; the bulk visibility data is never loaded, so the command
+The file must be a MeasurementSet v2 directory or an MSv4 processing set
+(Zarr v3). Only the table/array metadata and the small subtables or coordinate
+arrays are read; the bulk visibility data is never loaded, so the command
 stays cheap even for very large files.
 
 Options:
-  --verbose   Print also per-antenna/per-field/per-feed details and the log (HISTORY table)
+  --verbose   Print also per-antenna/per-field/per-feed details and the log (HISTORY table or sub-datasets)
 )";
 
 void print_general_usage(std::ostream& out) { out << general_usage; }
@@ -53,10 +69,9 @@ int run_help(const std::vector<std::string>& args) {
 /// Handle `rastro summary <file>`.
 int run_summary(const std::vector<std::string>& args) {
   cxxopts::Options options("rastro summary", "Print metadata of a visibility file");
-  options.add_options()("h,help", "Print usage")("verbose",
-                                                   "Print also per-antenna/per-field/per-feed details and the log (HISTORY table)",
-                                                   cxxopts::value<bool>())("file", "Visibility file (MeasurementSet v2)",
-                                                                          cxxopts::value<std::string>());
+  options.add_options()("h,help", "Print usage")(
+      "verbose", "Print also per-antenna/per-field/per-feed details and the log (HISTORY table)",
+      cxxopts::value<bool>())("file", "Visibility file (MeasurementSet v2 or MSv4)", cxxopts::value<std::string>());
   options.parse_positional({"file"});
 
   cxxopts::ParseResult result;
@@ -97,12 +112,18 @@ int run_summary(const std::vector<std::string>& args) {
     return 1;
   }
 
-  if (is_measurement_set(path)) {
-    print_measurement_set_summary(path, std::cout, result.count("verbose") > 0);
+  const bool verbose = result.count("verbose") > 0;
+
+  if (print_summary_if_format<MeasurementSetV2Format>(path, std::cout, verbose)) {
     return 0;
   }
 
-  std::cerr << "error: unsupported file format (expected a MeasurementSet v2): " << path << "\n";
+  if (print_summary_if_format<MeasurementSetV4Format>(path, std::cout, verbose)) {
+    return 0;
+  }
+
+  std::cerr << "error: unsupported file format (expected a MeasurementSet v2 or an MSv4 processing set): " << path
+            << "\n";
   return 1;
 }
 

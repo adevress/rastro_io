@@ -11,6 +11,11 @@
 }:
 
 let
+  # The MSv4 Zarr layer is implemented from scratch in src/msv4/zarr_io.cpp and
+  # only depends on xtensor (multi-dimensional arrays), nlohmann_json (metadata
+  # parsing) and the compression libraries supported by Zarr (Blosc, Zstandard,
+  # zlib and LZ4).
+  #
   # Dependencies provided by astro-nix (casacore, ...).
   #
   # HighFive is overridden to its latest upstream release (3.3.0); the version
@@ -29,7 +34,16 @@ let
       hdf5
       cxxopts
     ])
-    ++ [ astro-pkgs.casacore ];
+    ++ [
+      astro-pkgs.casacore
+      pkgs.xtensor
+      pkgs.xtl
+      pkgs.nlohmann_json
+      pkgs.c-blosc
+      pkgs.zstd
+      pkgs.zlib
+      pkgs.lz4
+    ];
 
   nativeBuildInputs = with pkgs; [
     cmake

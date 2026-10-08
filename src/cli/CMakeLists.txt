@@ -14,6 +14,7 @@ target_compile_options(rastro PRIVATE ${RASTRO_COMMON_FLAGS})
 target_link_libraries(rastro
   PRIVATE
     rastro_msv2
+    rastro_msv4
     cxxopts::cxxopts
 )
 
@@ -35,6 +36,14 @@ if(DEFINED ENV{RASTRO_MS_DATASETS})
       ${CMAKE_SOURCE_DIR}/scripts/summary-ms-datasets.sh
       $<TARGET_FILE:rastro>
       $ENV{RASTRO_MS_DATASETS}
+  )
+endif()
+
+# Optional integration test over a real MSv4 processing set.
+if(DEFINED ENV{RASTRO_MSV4_DATASET})
+  add_test(
+    NAME rastro_summary_msv4
+    COMMAND rastro summary $ENV{RASTRO_MSV4_DATASET}
   )
 endif()
 

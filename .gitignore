@@ -5,3 +5,8 @@ build-*/*
 compile_commands.json
 result
 result-*
+
+# Imaging validation data: multi-GB MS datasets and rendered images. The
+# scripts and IMAGING_REPORT.md at the top of imaging/ stay tracked.
+imaging/msv2/
+imaging/msv4/

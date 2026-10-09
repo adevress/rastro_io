@@ -61,17 +61,22 @@ ZarrArrayInfo numeric_array(std::string path, std::vector<std::size_t> shape, st
   return info;
 }
 
-/// Build the metadata of a string Zarr array (`fixed_length_utf32`).
+/// Build the metadata of a string Zarr array.
 ZarrArrayInfo string_array(std::string path, std::size_t count, std::vector<std::string> dimensions,
-                           nlohmann::json attributes, std::size_t width) {
+                           nlohmann::json attributes, std::size_t width, Msv4StringEncoding encoding) {
   ZarrArrayInfo info;
   info.path = std::move(path);
   info.zarr_format = 3;
   info.shape = {count};
   info.chunks = {std::max<std::size_t>(count, 1)};
   info.dimension_names = std::move(dimensions);
-  info.dtype = ZarrDtype::Utf32Fixed;
-  info.element_bytes = width;
+  if (encoding == Msv4StringEncoding::Utf32) {
+    info.dtype = ZarrDtype::Utf32Fixed;
+    info.element_bytes = width;
+  } else {
+    info.dtype = ZarrDtype::Utf8Variable;
+    info.element_bytes = 0;
+  }
   info.attributes = std::move(attributes);
   info.fill_value = "";
   apply_default_codec(info);
@@ -116,18 +121,6 @@ std::string sanitize_name(const std::string& name) {
   return result.empty() ? "visibility" : result;
 }
 
-/// Write a complete one-dimensional string array.
-void write_strings(ZarrWriter& writer, const std::string& path, const std::vector<std::string>& values,
-                   std::vector<std::string> dimensions = {}) {
-  if (values.empty()) {
-    return;
-  }
-  const ZarrArrayInfo info =
-      string_array(path, values.size(), std::move(dimensions), nlohmann::json::object(), utf32_width(values));
-  writer.create_array(info);
-  writer.write_string_array(info, values);
-}
-
 /// Map a per-time id array to strings, falling back to an index-based name.
 std::vector<std::string> id_to_name(const xt::xarray<std::int32_t>& ids, const std::vector<std::string>& names,
                                     const std::string& prefix) {
@@ -148,7 +141,8 @@ std::vector<std::string> id_to_name(const xt::xarray<std::int32_t>& ids, const s
 
 } // namespace
 
-Msv4Writer::Msv4Writer(std::string root) : m_writer(std::move(root)) {}
+Msv4Writer::Msv4Writer(std::string root, Msv4StringEncoding strings)
+    : m_writer(std::move(root)), m_string_encoding(strings) {}
 
 void Msv4Writer::create(const MeasurementSetMetadata& metadata, const VisibilityLayout& layout) {
   if (layout.num_times == 0 || layout.num_baselines == 0 || layout.num_channels == 0 || layout.num_correlations == 0) {
@@ -191,6 +185,19 @@ void Msv4Writer::create(const MeasurementSetMetadata& metadata, const Visibility
                                        {"field_and_source", "field_and_source_base_xds"}}}};
   m_writer.create_group(m_partition, group_attributes);
 
+  // String coordinates use the configured encoding: variable-length UTF-8
+  // (`string` + `vlen-utf8`) by default, or `fixed_length_utf32` on request.
+  const auto write_strings = [&](const std::string& path, const std::vector<std::string>& values,
+                                 std::vector<std::string> dimensions = {}) {
+    if (values.empty()) {
+      return;
+    }
+    const ZarrArrayInfo info = string_array(path, values.size(), std::move(dimensions), nlohmann::json::object(),
+                                            utf32_width(values), m_string_encoding);
+    m_writer.create_array(info);
+    m_writer.write_string_array(info, values);
+  };
+
   // ---- Coordinates ------------------------------------------------------
   {
     ZarrArrayInfo time =
@@ -225,8 +232,8 @@ void Msv4Writer::create(const MeasurementSetMetadata& metadata, const Visibility
     m_writer.write_array(info, baseline_id);
   }
 
-  write_strings(m_writer, m_partition + "/polarization", metadata.polarization.correlation_type, {"polarization"});
-  write_strings(m_writer, m_partition + "/uvw_label", {"u", "v", "w"}, {"uvw_label"});
+  write_strings(m_partition + "/polarization", metadata.polarization.correlation_type, {"polarization"});
+  write_strings(m_partition + "/uvw_label", {"u", "v", "w"}, {"uvw_label"});
 
   {
     std::vector<std::string> antenna1(layout.num_baselines);
@@ -241,13 +248,12 @@ void Msv4Writer::create(const MeasurementSetMetadata& metadata, const Visibility
                         ? metadata.antennas.name[static_cast<std::size_t>(a2)]
                         : "antenna_" + std::to_string(a2);
     }
-    write_strings(m_writer, m_partition + "/baseline_antenna1_name", antenna1, {"baseline_id"});
-    write_strings(m_writer, m_partition + "/baseline_antenna2_name", antenna2, {"baseline_id"});
+    write_strings(m_partition + "/baseline_antenna1_name", antenna1, {"baseline_id"});
+    write_strings(m_partition + "/baseline_antenna2_name", antenna2, {"baseline_id"});
   }
 
   if (layout.field_id.size() == layout.num_times) {
-    write_strings(m_writer, m_partition + "/field_name", id_to_name(layout.field_id, metadata.fields.name, "field_"),
-                  {"time"});
+    write_strings(m_partition + "/field_name", id_to_name(layout.field_id, metadata.fields.name, "field_"), {"time"});
   }
   if (layout.scan_number.size() == layout.num_times) {
     std::vector<std::string> scan_names;
@@ -255,7 +261,7 @@ void Msv4Writer::create(const MeasurementSetMetadata& metadata, const Visibility
     for (const std::int32_t scan : layout.scan_number) {
       scan_names.push_back("scan-" + std::to_string(scan));
     }
-    write_strings(m_writer, m_partition + "/scan_name", scan_names, {"time"});
+    write_strings(m_partition + "/scan_name", scan_names, {"time"});
   }
 
   // ---- Data variables ---------------------------------------------------
@@ -301,12 +307,12 @@ void Msv4Writer::create(const MeasurementSetMetadata& metadata, const Visibility
   const std::string antenna_xds = m_partition + "/antenna_xds";
   m_writer.create_group(antenna_xds,
                         {{"type", "antenna"}, {"overall_telescope_name", metadata.antennas.telescope_name}});
-  write_strings(m_writer, antenna_xds + "/antenna_name", metadata.antennas.name, {"antenna_name"});
-  write_strings(m_writer, antenna_xds + "/station_name", metadata.antennas.station, {"antenna_name"});
-  write_strings(m_writer, antenna_xds + "/mount", metadata.antennas.mount, {"antenna_name"});
+  write_strings(antenna_xds + "/antenna_name", metadata.antennas.name, {"antenna_name"});
+  write_strings(antenna_xds + "/station_name", metadata.antennas.station, {"antenna_name"});
+  write_strings(antenna_xds + "/mount", metadata.antennas.mount, {"antenna_name"});
   {
     std::vector<std::string> telescopes(metadata.antennas.name.size(), metadata.antennas.telescope_name);
-    write_strings(m_writer, antenna_xds + "/telescope_name", telescopes, {"antenna_name"});
+    write_strings(antenna_xds + "/telescope_name", telescopes, {"antenna_name"});
   }
   if (has_values(metadata.antennas.position)) {
     const std::size_t count = metadata.antennas.position.shape()[0];
@@ -328,13 +334,13 @@ void Msv4Writer::create(const MeasurementSetMetadata& metadata, const Visibility
   // ---- field_and_source_base_xds ---------------------------------------
   const std::string field_xds = m_partition + "/field_and_source_base_xds";
   m_writer.create_group(field_xds, {{"type", "field_and_source"}});
-  write_strings(m_writer, field_xds + "/field_name", metadata.fields.name, {"field_name"});
+  write_strings(field_xds + "/field_name", metadata.fields.name, {"field_name"});
   {
     std::vector<std::string> sources = metadata.sources.name;
     if (sources.size() < metadata.fields.name.size()) {
       sources.resize(metadata.fields.name.size(), "Unknown");
     }
-    write_strings(m_writer, field_xds + "/source_name", sources, {"field_name"});
+    write_strings(field_xds + "/source_name", sources, {"field_name"});
   }
   if (has_values(metadata.fields.phase_direction)) {
     const std::size_t count = metadata.fields.phase_direction.shape()[0];

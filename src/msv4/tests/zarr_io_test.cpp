@@ -4,7 +4,10 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -191,6 +194,69 @@ void test_big_endian(const std::string& root) {
   }
 }
 
+void test_string_roundtrip(const std::string& root) {
+  rastro::ZarrWriter writer(root);
+  rastro::ZarrStore store(root);
+
+  // Fixed-length UTF-32 (MSv4 string coordinates).
+  rastro::ZarrArrayInfo fixed;
+  fixed.path = "fixed_strings";
+  fixed.shape = {4};
+  fixed.chunks = {2};
+  fixed.dtype = rastro::ZarrDtype::Utf32Fixed;
+  fixed.element_bytes = 12; // capacity of 3 code points
+  fixed.codec = rastro::ZarrCodec::Zstd;
+  fixed.codec_configuration = {{"level", 3}};
+  fixed.fill_value = "";
+  writer.create_array(fixed);
+  const std::vector<std::string> fixed_values = {"Hi", "abc", "", "Z"};
+  writer.write_string_array(fixed, fixed_values);
+  const std::vector<std::string> read_fixed = rastro::zarr_read_strings(store, fixed);
+  check(read_fixed == fixed_values, "fixed_length_utf32 string round-trip");
+
+  // Variable-length UTF-8: registered `string` data type + `vlen-utf8` codec.
+  rastro::ZarrArrayInfo vlen;
+  vlen.path = "vlen_strings";
+  vlen.shape = {5};
+  vlen.chunks = {2};
+  vlen.dtype = rastro::ZarrDtype::Utf8Variable;
+  vlen.codec = rastro::ZarrCodec::Zstd;
+  vlen.codec_configuration = {{"level", 3}};
+  vlen.fill_value = "";
+  writer.create_array(vlen);
+  const std::vector<std::string> vlen_values = {"alpha", "", "beta", "a much longer string", "x"};
+  writer.write_string_array(vlen, vlen_values);
+
+  // Reading the metadata back must recognize the `string` data type and the
+  // `vlen-utf8` codec, and the chunk element-count prefix must be parsed.
+  const rastro::ZarrArrayInfo reread = store.read_array_info("vlen_strings");
+  check(reread.dtype == rastro::ZarrDtype::Utf8Variable, "string data type recognized");
+  const std::vector<std::string> read_vlen = rastro::zarr_read_strings(store, reread);
+  check(read_vlen == vlen_values, "vlen-utf8 string round-trip");
+
+  // On disk the array must use the registered `string` data type + `vlen-utf8` codec.
+  nlohmann::json metadata;
+  {
+    std::ifstream stream(root + "/vlen_strings/zarr.json");
+    stream >> metadata;
+  }
+  check(metadata["data_type"] == "string", "vlen array uses the `string` data type");
+  bool has_vlen_codec = false;
+  for (const auto& codec : metadata["codecs"]) {
+    has_vlen_codec = has_vlen_codec || codec["name"] == "vlen-utf8";
+  }
+  check(has_vlen_codec, "vlen array uses the `vlen-utf8` codec");
+
+  // A vlen-utf8 chunk starts with a u32le element count.
+  const std::vector<std::byte> chunk = rastro::zarr_decompress(reread, store.read_chunk_raw(reread, {0}));
+  std::uint32_t stored = 0;
+  const bool has_prefix = chunk.size() >= sizeof(stored);
+  if (has_prefix) {
+    std::memcpy(&stored, chunk.data(), sizeof(stored));
+  }
+  check(has_prefix && stored == 2, "vlen-utf8 chunk element-count prefix");
+}
+
 void test_dtype_from_name() {
   std::size_t bytes = 0;
   check(rastro::zarr_dtype_from_name("float64", bytes) == rastro::ZarrDtype::Float64 && bytes == 8, "dtype float64");
@@ -218,6 +284,7 @@ int main() {
   test_double_roundtrip(root.string(), rastro::ZarrCodec::Blosc, true); // with crc32c
   test_complex_and_bool(root.string());
   test_big_endian(root.string());
+  test_string_roundtrip(root.string());
   test_dtype_from_name();
 
   std::filesystem::remove_all(root);

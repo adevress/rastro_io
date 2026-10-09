@@ -47,7 +47,7 @@ enum class ZarrDtype {
   Raw,
   /// Zarr v3 `fixed_length_utf32` extension data type.
   Utf32Fixed,
-  /// Zarr v3 `vlen_utf8` / v2 `|U` string data.
+  /// Zarr v3 `string` data type (variable-length UTF-8, `vlen-utf8` codec).
   Utf8Variable,
   Unknown,
 };
@@ -184,7 +184,8 @@ public:
   template <class T>
   void write_region(const ZarrArrayInfo& info, const std::vector<std::size_t>& start, const xt::xarray<T>& data);
 
-  /// Write a one-dimensional array of strings as `fixed_length_utf32`.
+  /// Write a one-dimensional array of strings as `fixed_length_utf32` or, when
+  /// the data type is `string`, using the `vlen-utf8` codec.
   void write_string_array(const ZarrArrayInfo& info, const std::vector<std::string>& values);
 
 private:

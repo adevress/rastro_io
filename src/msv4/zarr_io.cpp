@@ -485,6 +485,11 @@ void parse_v3_codecs(const nlohmann::json& array, ZarrArrayInfo& info) {
       info.codec_configuration = configuration;
     } else if (name == "crc32c") {
       info.crc32c = true;
+    } else if (name == "vlen-utf8" || name == "vlen_utf8" || name == "vlen-bytes") {
+      // Variable-length string serializer. The data type (`string` /
+      // `vlen-utf8`) determines the chunk layout, so there is nothing to
+      // record here; a following byte codec (e.g. zstd) is still honoured.
+      (void)configuration;
     } else if (name == "sharding_indexed" || name == "sharding") {
       throw std::runtime_error("zarr: sharding codec is not supported");
     } else {
@@ -874,7 +879,7 @@ std::string zarr_dtype_name(ZarrDtype type) {
   case ZarrDtype::Utf32Fixed:
     return "fixed_length_utf32";
   case ZarrDtype::Utf8Variable:
-    return "vlen_utf8";
+    return "string";
   case ZarrDtype::Unknown:
     return "unknown";
   }
@@ -910,6 +915,10 @@ ZarrDtype zarr_dtype_from_name(std::string_view name, std::size_t& element_bytes
       {"complex64", ZarrDtype::Complex64},
       {"c16", ZarrDtype::Complex128},
       {"complex128", ZarrDtype::Complex128},
+      // Registered string data type (variable-length UTF-8, `vlen-utf8` codec).
+      {"string", ZarrDtype::Utf8Variable},
+      {"vlen-utf8", ZarrDtype::Utf8Variable},
+      {"vlen_utf8", ZarrDtype::Utf8Variable},
   };
   for (const auto& [key, value] : table) {
     if (name == key) {
@@ -1222,15 +1231,23 @@ std::vector<std::string> zarr_read_strings(const ZarrStore& store, const ZarrArr
         result[origin + i] = utf32le_to_utf8(std::span<const std::byte>(bytes).subspan(i * width, width), width);
       }
     } else {
-      // vlen_utf8: for each element, a 4-byte little-endian length then UTF-8.
+      // vlen-utf8 codec layout (Zarr extension): a u32 little-endian element
+      // count, followed for each element by a u32 little-endian byte length
+      // and the UTF-8 bytes.
       std::size_t cursor = 0;
-      for (std::size_t i = 0; i < extent; ++i) {
+      const auto read_u32 = [&](std::uint32_t& value) {
         if (cursor + sizeof(std::uint32_t) > bytes.size()) {
           throw std::runtime_error("zarr: truncated vlen_utf8 chunk");
         }
+        std::memcpy(&value, bytes.data() + cursor, sizeof(value));
+        cursor += sizeof(value);
+      };
+      std::uint32_t stored_elements = 0;
+      read_u32(stored_elements);
+      const std::size_t elements = std::min<std::size_t>(extent, stored_elements);
+      for (std::size_t i = 0; i < elements; ++i) {
         std::uint32_t length = 0;
-        std::memcpy(&length, bytes.data() + cursor, sizeof(length));
-        cursor += sizeof(length);
+        read_u32(length);
         if (cursor + length > bytes.size()) {
           throw std::runtime_error("zarr: truncated vlen_utf8 string");
         }
@@ -1279,12 +1296,19 @@ void ZarrWriter::create_array(const ZarrArrayInfo& info) {
   json["chunk_key_encoding"] = {{"name", "default"}, {"configuration", {{"separator", "/"}}}};
   json["fill_value"] = info.fill_value;
   json["codecs"] = nlohmann::json::array();
-  const std::string_view endian = info.endianness == std::endian::big ? "big" : "little";
-  json["codecs"].push_back({{"name", "bytes"}, {"configuration", {{"endian", endian}}}});
-  if (info.dtype == ZarrDtype::Utf32Fixed) {
-    json["data_type"] = {{"name", "fixed_length_utf32"}, {"configuration", {{"length_bytes", info.element_bytes}}}};
-  } else {
+  if (info.dtype == ZarrDtype::Utf8Variable) {
+    // Variable-length UTF-8 strings use the registered `string` data type and
+    // the `vlen-utf8` array->bytes codec instead of `bytes`.
+    json["codecs"].push_back({{"name", "vlen-utf8"}});
     json["data_type"] = zarr_dtype_name(info.dtype);
+  } else {
+    const std::string_view endian = info.endianness == std::endian::big ? "big" : "little";
+    json["codecs"].push_back({{"name", "bytes"}, {"configuration", {{"endian", endian}}}});
+    if (info.dtype == ZarrDtype::Utf32Fixed) {
+      json["data_type"] = {{"name", "fixed_length_utf32"}, {"configuration", {{"length_bytes", info.element_bytes}}}};
+    } else {
+      json["data_type"] = zarr_dtype_name(info.dtype);
+    }
   }
   if (info.codec != ZarrCodec::None) {
     std::string_view name;
@@ -1506,20 +1530,36 @@ void ZarrWriter::write_string_array(const ZarrArrayInfo& info, const std::vector
   if (info.rank() != 1) {
     throw std::invalid_argument("zarr write_string_array: only one-dimensional arrays are supported");
   }
-  if (info.dtype != ZarrDtype::Utf32Fixed) {
-    throw std::invalid_argument("zarr write_string_array: expected fixed_length_utf32");
+  if (info.dtype != ZarrDtype::Utf32Fixed && info.dtype != ZarrDtype::Utf8Variable) {
+    throw std::invalid_argument("zarr write_string_array: expected a string data type");
   }
-  const std::size_t width = info.element_bytes;
   const std::size_t count = info.shape[0];
   const std::size_t chunk = info.chunks[0];
 
   for (std::size_t chunk_index = 0; chunk_index * chunk < count; ++chunk_index) {
     const std::size_t origin = chunk_index * chunk;
     const std::size_t extent = std::min(chunk, count - origin);
-    std::vector<std::byte> raw(extent * width);
-    for (std::size_t i = 0; i < extent; ++i) {
-      const std::string& text = values[origin + i];
-      utf8_to_utf32le(text, std::span<std::byte>(raw).subspan(i * width, width));
+    std::vector<std::byte> raw;
+    if (info.dtype == ZarrDtype::Utf32Fixed) {
+      const std::size_t width = info.element_bytes;
+      raw.resize(extent * width);
+      for (std::size_t i = 0; i < extent; ++i) {
+        utf8_to_utf32le(values[origin + i], std::span<std::byte>(raw).subspan(i * width, width));
+      }
+    } else {
+      // vlen-utf8 codec layout: a u32 little-endian element count, then for
+      // each element a u32 little-endian byte length followed by UTF-8 bytes.
+      const auto append_u32 = [&raw](std::uint32_t value) {
+        const auto* bytes = reinterpret_cast<const std::byte*>(&value);
+        raw.insert(raw.end(), bytes, bytes + sizeof(value));
+      };
+      append_u32(static_cast<std::uint32_t>(extent));
+      for (std::size_t i = 0; i < extent; ++i) {
+        const std::string& text = values[origin + i];
+        append_u32(static_cast<std::uint32_t>(text.size()));
+        const auto* bytes = reinterpret_cast<const std::byte*>(text.data());
+        raw.insert(raw.end(), bytes, bytes + text.size());
+      }
     }
     write_chunk(info, {chunk_index}, zarr_compress(info, raw));
   }

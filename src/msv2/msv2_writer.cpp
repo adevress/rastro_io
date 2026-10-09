@@ -42,6 +42,8 @@
 #include <casacore/ms/MeasurementSets/MSSpWindowColumns.h>
 #include <casacore/ms/MeasurementSets/MSSpectralWindow.h>
 #include <casacore/ms/MeasurementSets/MeasurementSet.h>
+#include <casacore/tables/DataMan/TiledColumnStMan.h>
+#include <casacore/tables/DataMan/TiledShapeStMan.h>
 #include <casacore/tables/Tables/ArrayColumn.h>
 #include <casacore/tables/Tables/ScalarColumn.h>
 #include <casacore/tables/Tables/SetupNewTab.h>
@@ -49,6 +51,18 @@
 
 namespace rastro {
 namespace {
+
+// Default tile layout: each tile is sized to about 512 KiB. Rows per tile are
+// derived from the bits one row of the column occupies (Bool columns are
+// bit-packed by casacore, i.e. 1 bit per value).
+constexpr std::size_t k_tile_block_bytes = 512 * 1024;
+
+/// Rows per tile so that one tile is about `k_tile_block_bytes`.
+casacore::Int tile_rows_from_bits(std::size_t bits_per_row) {
+  constexpr std::size_t block_bits = k_tile_block_bytes * 8;
+  const std::size_t rows = bits_per_row == 0 ? 1 : block_bits / bits_per_row;
+  return static_cast<casacore::Int>(std::max<std::size_t>(rows, 1));
+}
 
 std::vector<std::size_t> c_strides(const std::vector<std::size_t>& extent) {
   std::vector<std::size_t> strides(extent.size(), 1);
@@ -431,7 +445,89 @@ void Msv2Writer::create(const MeasurementSetMetadata& metadata, const Visibility
   ensure(casacore::MS::UVW);
   ensure(casacore::MS::TIME_CENTROID);
 
+  const std::size_t channel_count = layout.num_channels;
+  const std::size_t correlation_count = layout.num_correlations;
+
+  // Name-based storage-manager dispatch for the bulk array columns. A cell is
+  // "column-like" when all of its axes are < 16 except at most one; such a
+  // column is stored with TiledColumnStMan (a single fixed cell shape, no
+  // per-cell index). More multi-dimensional cells use TiledShapeStMan. Every
+  // tile is sized to about 512 KiB.
+  struct ManagedColumn {
+    casacore::String name;
+    std::vector<std::size_t> cell_shape;
+    std::size_t bits_per_element = 8;
+    bool column_stored = false;
+    std::vector<std::size_t> effective_shape{};
+  };
+  std::vector<ManagedColumn> columns = {
+      {"DATA", {correlation_count, channel_count}, 8 * 8},            // complex64
+      {"FLAG", {correlation_count, channel_count}, 1},                // bool (bit-packed)
+      {"WEIGHT_SPECTRUM", {correlation_count, channel_count}, 4 * 8}, // float32
+      {"SIGMA_SPECTRUM", {correlation_count, channel_count}, 4 * 8},  // float32
+      {"WEIGHT", {correlation_count}, 4 * 8},                         // float32
+      {"SIGMA", {correlation_count}, 4 * 8},                          // float32
+      {"UVW", {3}, 8 * 8},                                            // float64
+  };
+
+  // First pass: choose the manager and make column-stored columns fixed-shape.
+  // This must run before the SetupNewTable is built, because it copies the
+  // column descriptors.
+  for (ManagedColumn& managed : columns) {
+    if (!desc.isColumn(managed.name)) {
+      continue;
+    }
+    const std::size_t large_axes = static_cast<std::size_t>(std::count_if(
+        managed.cell_shape.begin(), managed.cell_shape.end(), [](std::size_t extent) { return extent >= 16; }));
+    managed.column_stored = large_axes <= 1;
+
+    casacore::ColumnDesc& column = desc.rwColumnDesc(managed.name);
+    if (column.isFixedShape()) {
+      // The column already has a fixed shape (e.g. a required column such as
+      // UVW); reuse it instead of calling setShape again.
+      managed.effective_shape.clear();
+      const casacore::IPosition& existing = column.shape();
+      for (casacore::uInt d = 0; d < existing.size(); ++d) {
+        managed.effective_shape.push_back(static_cast<std::size_t>(existing[d]));
+      }
+    } else {
+      managed.effective_shape = managed.cell_shape;
+      if (managed.column_stored) {
+        casacore::IPosition shape(static_cast<casacore::uInt>(managed.cell_shape.size()));
+        for (std::size_t d = 0; d < managed.cell_shape.size(); ++d) {
+          shape[static_cast<casacore::uInt>(d)] = static_cast<casacore::Int>(managed.cell_shape[d]);
+        }
+        column.setShape(shape);
+      }
+    }
+  }
+
   casacore::SetupNewTable setup(m_path, desc, casacore::Table::New);
+
+  // Second pass: bind the storage managers.
+  for (const ManagedColumn& managed : columns) {
+    if (!desc.isColumn(managed.name)) {
+      continue;
+    }
+    std::size_t elements = 1;
+    for (const std::size_t extent : managed.effective_shape) {
+      elements *= extent;
+    }
+    casacore::IPosition tile(static_cast<casacore::uInt>(managed.effective_shape.size() + 1));
+    for (std::size_t d = 0; d < managed.effective_shape.size(); ++d) {
+      tile[static_cast<casacore::uInt>(d)] = static_cast<casacore::Int>(managed.effective_shape[d]);
+    }
+    tile[static_cast<casacore::uInt>(managed.effective_shape.size())] =
+        tile_rows_from_bits(elements * managed.bits_per_element);
+
+    const casacore::String sm_name = casacore::String("Tiled") + managed.name;
+    if (managed.column_stored) {
+      setup.bindColumn(managed.name, casacore::TiledColumnStMan(sm_name, tile));
+    } else {
+      setup.bindColumn(managed.name, casacore::TiledShapeStMan(sm_name, tile));
+    }
+  }
+
   m_impl->ms = std::make_unique<casacore::MeasurementSet>(setup, 0);
   casacore::MeasurementSet& ms = *m_impl->ms;
   ms.createDefaultSubtables(casacore::Table::New);

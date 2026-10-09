@@ -11,3 +11,8 @@ result-*
 # scripts and IMAGING_REPORT.md at the top of imaging/ stay tracked.
 imaging/msv2/
 imaging/msv4/
+
+# imaging2 conversion/imaging benchmark outputs (large data stays untracked).
+imaging2/*/msv4.ps.zarr/
+imaging2/*/back.ms/
+imaging2/*/*.fits

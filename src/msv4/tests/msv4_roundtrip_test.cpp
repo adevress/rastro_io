@@ -116,15 +116,13 @@ void write_synthetic(rastro::Msv4Writer& writer, const rastro::VisibilityLayout&
 
 } // namespace
 
-int main() {
-  const std::filesystem::path root = std::filesystem::temp_directory_path() / "rastro_msv4_roundtrip.ps.zarr";
+void run_roundtrip(const std::filesystem::path& root, rastro::Msv4StringEncoding encoding) {
   std::filesystem::remove_all(root);
-
   const rastro::VisibilityLayout layout = make_layout();
 
   try {
     {
-      rastro::Msv4Writer writer(root.string());
+      rastro::Msv4Writer writer(root.string(), encoding);
       write_synthetic(writer, layout);
     }
 
@@ -163,6 +161,12 @@ int main() {
   }
 
   std::filesystem::remove_all(root);
+}
+
+int main() {
+  const std::filesystem::path root = std::filesystem::temp_directory_path() / "rastro_msv4_roundtrip.ps.zarr";
+  run_roundtrip(root, rastro::Msv4StringEncoding::Utf8);
+  run_roundtrip(root, rastro::Msv4StringEncoding::Utf32);
 
   if (g_failures == 0) {
     std::cout << "msv4 round-trip test passed\n";

@@ -4,7 +4,9 @@
 ## depends on xtensor, nlohmann_json and the Zarr compression libraries.
 add_library(rastro_msv4
   measurement_set.cpp
+  msv4_reader.cpp
   msv4_summary.cpp
+  msv4_writer.cpp
   zarr_io.cpp
 )
 
@@ -15,15 +17,14 @@ target_include_directories(rastro_msv4
 
 target_compile_options(rastro_msv4 PRIVATE ${RASTRO_COMMON_FLAGS})
 
-pkg_check_modules(XTENSOR REQUIRED IMPORTED_TARGET xtensor)
 pkg_check_modules(BLOSC REQUIRED IMPORTED_TARGET blosc)
 pkg_check_modules(ZSTD REQUIRED IMPORTED_TARGET libzstd)
 pkg_check_modules(LZ4 REQUIRED IMPORTED_TARGET liblz4)
-find_package(xtl REQUIRED)
 find_package(ZLIB REQUIRED)
 
 target_link_libraries(rastro_msv4
   PUBLIC
+    rastro_meas
     PkgConfig::XTENSOR
     xtl
     nlohmann_json::nlohmann_json
@@ -51,3 +52,9 @@ if(DEFINED ENV{RASTRO_MSV4_DATASET})
     COMMAND rastro_msv4_reader_test $ENV{RASTRO_MSV4_DATASET}
   )
 endif()
+
+## Self-contained MSv4 writer/reader round-trip test.
+add_executable(rastro_msv4_roundtrip_test tests/msv4_roundtrip_test.cpp)
+target_link_libraries(rastro_msv4_roundtrip_test PRIVATE rastro_msv4)
+target_compile_options(rastro_msv4_roundtrip_test PRIVATE ${RASTRO_COMMON_FLAGS})
+add_test(NAME rastro_msv4_roundtrip COMMAND rastro_msv4_roundtrip_test)

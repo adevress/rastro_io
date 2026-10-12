@@ -47,7 +47,7 @@ enum class ZarrDtype {
   Raw,
   /// Zarr v3 `fixed_length_utf32` extension data type.
   Utf32Fixed,
-  /// Zarr v3 `vlen_utf8` / v2 `|U` string data.
+  /// Zarr v3 `string` data type (variable-length UTF-8, `vlen-utf8` codec).
   Utf8Variable,
   Unknown,
 };
@@ -173,6 +173,20 @@ public:
   void write_chunk(const ZarrArrayInfo& info, const std::vector<std::size_t>& index, std::span<const std::byte> raw);
   /// Split an xtensor into chunks, encode and write them.
   template <class T> void write_array(const ZarrArrayInfo& info, const xt::xarray<T>& data);
+
+  /// Write a rectangular region of an array from an xtensor whose shape is the
+  /// region shape.
+  ///
+  /// `start` and `data.shape()` describe the region in the array coordinate
+  /// system. Chunks that the region covers only partially are read back and
+  /// merged, so tiles smaller than a chunk are supported. This is what lets
+  /// the MSv4 writer stream a dataset that does not fit in memory.
+  template <class T>
+  void write_region(const ZarrArrayInfo& info, const std::vector<std::size_t>& start, const xt::xarray<T>& data);
+
+  /// Write a one-dimensional array of strings as `fixed_length_utf32` or, when
+  /// the data type is `string`, using the `vlen-utf8` codec.
+  void write_string_array(const ZarrArrayInfo& info, const std::vector<std::string>& values);
 
 private:
   std::string m_root;

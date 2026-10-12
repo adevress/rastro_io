@@ -19,8 +19,12 @@ Early development. The current milestone provides the project skeleton, the
 Nix/CMake build environment and the first `rastro` subcommands:
 
 - `rastro help` — print usage information.
-- `rastro summary <file>` — print metadata of a MeasurementSet v2 visibility
-  file using the casacore API, without reading the bulk of the data.
+- `rastro summary <file>` — print metadata of a MeasurementSet v2 or an MSv4
+  visibility file without reading the bulk of the data.
+- `rastro convert --to-format=<msv2|msv4> <source> <destination>` — convert a
+  visibility file between MeasurementSet v2 and MSv4. The conversion streams
+  the visibilities tile by tile, so datasets larger than memory can be
+  converted.
 
 ## Requirements
 
@@ -77,11 +81,21 @@ is best achieved from a static package set (`pkgsStatic`); see `flake.nix`.
 ```bash
 rastro help
 rastro summary /path/to/observation.ms
+rastro convert --to-format=msv4 /path/to/observation.ms /path/to/observation.ps.zarr
+rastro convert --to-format=msv2 /path/to/observation.ps.zarr /path/to/observation.ms
 ```
 
-`summary` detects MeasurementSet v2 inputs and prints the main metadata
+`summary` detects MeasurementSet v2 and MSv4 inputs and prints the main metadata
 (observations, antennas, fields, spectral windows, polarisations, ...) by reading
 only the table metadata and subtables, never the bulk visibility data.
+
+`convert` moves a visibility dataset between formats. The destination is created
+(including its parent directories); if it already exists the command fails. Data
+is streamed tile by tile through a format-independent property API whose
+multi-dimensional content is exposed as xtensor, so the peak memory footprint is
+one tile. Chunk I/O goes through `preadv`/`pwritev` rather than iostreams.
+See [`imaging/IMAGING_REPORT.md`](./imaging/IMAGING_REPORT.md) for the MSv2 ⇄ MSv4
+validation and imaging results on the SKA-Low dataset.
 
 ### Compatibility and performance
 
